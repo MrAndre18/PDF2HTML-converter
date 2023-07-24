@@ -2,9 +2,9 @@ import re
 from pdf2docx import Converter
 from docx import Document
 from docx.shared import Pt
-from docx.oxml import parse_xml
+from docx.oxml import parse_xml, OxmlElement
 from docx.shared import RGBColor
-from docx.oxml.ns import qn
+from docx.oxml.ns import qn, nsdecls
 
 def convert_pdf_to_docx(pdf_path, docx_path):
   cv = Converter(pdf_path)
@@ -58,7 +58,7 @@ def convert_links_to_text(doc):
               t = parse_xml(f'<w:t xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">{element.text}</w:t>')
               run._r.append(t)
 
-pdf_path = 'PDF/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf'
+pdf_path = 'Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf'
 docx_path = 'Result.docx'
 text_to_remove = 'https://uae.saderlex.com/'
 
