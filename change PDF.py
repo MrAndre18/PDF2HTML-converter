@@ -1,10 +1,26 @@
 import PyPDF2
 import re
 from datetime import datetime
+from langdetect import detect
+from translate import Translator
+
+################################
+# Редактирование инфо о законе #
+################################
+
+def translate_text(text):
+  lang = detect(text)
+  translator = Translator(from_lang=lang, to_lang='en')
+  if lang != 'en':
+    translation = translator.translate(text)
+    return translation
+  else:
+    return text
 
 def get_law_number(doc):
   law_number = [int(s) for s in str.split(doc[0]) if s.isdigit()]
-  print('Номер закона:', law_number[0])
+  
+  return law_number[0]
 
 def get_law_create_date(doc):
   pattern = r'\d{2}/\d{1,}/\d{4}'  # Regular expression pattern for dd/dd/dddd format
@@ -13,35 +29,114 @@ def get_law_create_date(doc):
   if match:
     date_str = match.group()
     law_date = datetime.strptime(date_str, '%d/%m/%Y')
-    print('Дата принятия закона:', law_date)
+    return law_date
   else:
-    print('Дата не найдена')
+    return ''
 
 def get_law_tipe(doc):
   doc_first_line = doc[0]
+  
+  # Удаляем цифры из строки
   law_tipe = re.sub("[0-9]", "", doc_first_line)
-  print('Вид НПА:', law_tipe)
+  
+  # Удаляем заданные фразы из строки
+  phrases = ["no", "№", "No."]
+  for phrase in phrases:
+    law_tipe = law_tipe.replace(phrase, '')
+  
+  return law_tipe.strip()
 
 def get_law_name(doc):
   doc.pop(2)
-  law_name = ' '.join(doc)
+  doc.pop(1)
+  doc_first_line = translate_text(doc[0])
+  doc.pop(0)
   
-  print('Название закона:', law_name)
+  # Подстановка знака № и очистка строки от ненужных символов
+  phrases = ["no", "No", "No."]
+  for phrase in phrases:
+    doc_first_line = doc_first_line.replace(phrase, '№')
+  phrases = [",", "."]
+  for phrase in phrases:
+    doc_first_line = doc_first_line.replace(phrase, '')
+    
+  law_number = [int(s) for s in str.split(doc_first_line) if s.isdigit()]
+  
+  # Убираем из строки номер закона и знак №, если этот знак после перевода не в конце
+  doc_first_line = re.sub(str(law_number[0]), '', doc_first_line).strip()
+  doc_first_line = re.sub('№', '', doc_first_line).strip()
+  
+  number = ''.join(['№', str(law_number[0])])
+  
+  law_name = ' '.join([doc_first_line, number, doc[0]])
+  
+  return law_name.strip()
+
+def get_law_data(doc):
+  text = translate_text('||'.join(doc))
+  text = text.split('||')
+  document_title = []
+  
+  for line in text:
+    line = line.strip()  # Убираем лишние пробелы в начале и конце строки
+    line = " ".join(line.split())  # Убираем лишние пробелы между словами
+    document_title.append(line)
+  
+  law_number = get_law_number(document_title)
+  law_date = get_law_create_date(document_title)
+  law_tipe = get_law_tipe(document_title)
+  law_name = get_law_name(document_title)
+  
+  processing_law_data(law_number, law_date, law_tipe, law_name)
+
+def processing_law_data(law_number, law_date, law_tipe, law_name):
+  # Обработчик информации о законе
+  # Тут будет запись в БД
+  print('law_number:', law_number)
+  print('law_date:', law_date)
+  print('law_tipe:', law_tipe)
+  print('law_name:', law_name)
+
+########################
+# Редактирование файла #
+########################
 
 def remove_empty_lines(lines):
-    """Удаляет пустые строки из списка строк"""
-    return list(filter(lambda x: x.strip(), lines))
+  """Удаляет пустые строки из списка строк"""
+  return list(filter(lambda x: x.strip(), lines))
 
-def remove_first_last_lines(lines):
-    """Удаляет первую и последнюю строку из списка строк"""
-    return lines[2:]
+def remove_first_last_lines(lines, phrase, pages_count):
+  """Удаляет ненужные строки"""
+  for line in lines:
+    if phrase in line: # Проверяем, содержит ли строка заданную фразу
+      line = line.split()[1:]
+      line = ' '.join(line)
+      line = re.sub('/' + str(pages_count), '||', line).strip()
+      line = line.split('||')[1:]
+      line = ' '.join(line)
+  ######
+  
+  ######
+  
+  ###### ДОДЕЛАТЬ ИЗМЕНЕНИЕ В ОБЩЕМ МАССИВЕ
+  
+  ######
+  
+  ######
+  print('lines', lines)
+    
+  return lines
 
 def join_page_text(page, lines):
-    """Обновляет текст страницы"""
-    page_content = ' \n'.join(lines)
-    #page.merge_page(page_content)
-    
-    return page_content
+  """Обновляет текст страницы"""
+  page_content = ' \n'.join(lines)
+  #page.merge_page(page_content)
+  
+  return page_content
+
+###################
+# Главная функция #
+###################
 
 def process_pdf_file(input_file_path, output_file_path):
   """Обрабатывает файл PDF"""
@@ -55,17 +150,14 @@ def process_pdf_file(input_file_path, output_file_path):
     lines = page.extract_text().split('\n')
     
     non_empty_lines = remove_empty_lines(lines)
-    cleared_page = remove_first_last_lines(non_empty_lines)
+    cleared_page = remove_first_last_lines(non_empty_lines, 'https://', len(pdf_reader.pages))
     # changed_page = join_page_text(page, non_empty_lines)
     
     if page_num == 0:
       document_title = cleared_page[:4]
-      print(document_title)
+      #print(document_title)
       
-      get_law_number(document_title)
-      get_law_create_date(document_title)
-      get_law_tipe(document_title)
-      get_law_name(document_title)
+      #get_law_data(document_title)
     
     # print(cleared_page)
     # print('\n#############################################')
