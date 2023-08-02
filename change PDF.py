@@ -5,34 +5,87 @@ from langdetect import detect
 from translate import Translator
 import fitz
 
+
 ################################
 # Редактирование инфо о законе #
 ################################
 
+def remove_html_tags(lst):
+  cleaned_list = []
+  for string in lst:
+    cleaned_string = re.sub('<.*?>', '', string)
+    cleaned_list.append(cleaned_string)
+  return cleaned_list
+
+def remove_first_last_lines(lines, phrase, pages_count):
+  """Удаляет ненужные строки"""
+  for index, line in enumerate(lines):
+    if phrase in line: # Проверяем, содержит ли строка заданную фразу
+      line = line.split()[1:]
+      line = ' '.join(line)
+      line = re.sub('/' + str(pages_count), '||', line).strip()
+      line = line.split('||')[1:]
+      line = ' '.join(line)
+      lines[index] = line
+      
+    line = line.strip()  # Убираем лишние пробелы в начале и конце каждой строки
+    lines[index] = line
+
+  return lines[1:]
+
+def remove_empty_lines(lines):
+  """Удаляет пустые строки из списка строк"""
+  return list(filter(lambda x: x.strip(), lines))
+
+def get_doc_title(path):
+  # Открываем файл для чтения
+  pdf_file = open(path, 'rb')
+  pdf_reader = PyPDF2.PdfReader(pdf_file)
+  
+  doc_title = []
+  
+  # Обходим первую страницу и достаёт заголовок
+  page = pdf_reader.pages[0]
+  lines = page.extract_text().split('\n')
+  
+  cleared_page = remove_first_last_lines(lines, 'https://', len(pdf_reader.pages))
+  
+  if len(pdf_reader.pages) == 1:
+    doc_title = cleared_page[5:9]
+  else:
+    doc_title = cleared_page[:5]
+  
+  pdf_file.close()
+  return doc_title
+
 def translate_text(text):
   lang = detect(text)
   translator = Translator(from_lang=lang, to_lang='en')
+
   if lang != 'en':
     translation = translator.translate(text)
     return translation
   else:
-    return text
+    return None
 
 def get_law_number(doc):
   law_number = [int(s) for s in str.split(doc[0]) if s.isdigit()]
   
-  return law_number[0]
+  if law_number[0]:
+    return law_number[0]
+  else:
+    return None
 
 def get_law_create_date(doc):
-  pattern = r'\d{2}/\d{1,}/\d{4}'  # Regular expression pattern for dd/dd/dddd format
+  pattern = r'\d{1,}/\d{1,}/\d{4}'  # Регулярное выражение для даты dd/dd/dddd
   match = re.search(pattern, doc[1])
   
   if match:
     date_str = match.group()
-    law_date = datetime.strptime(date_str, '%d/%m/%Y')
+    law_date = datetime.strptime(date_str, '%d/%m/%Y').date()
     return law_date
   else:
-    return ''
+    return None
 
 def get_law_tipe(doc):
   doc_first_line = doc[0]
@@ -50,7 +103,7 @@ def get_law_tipe(doc):
 def get_law_name(doc):
   doc.pop(2)
   doc.pop(1)
-  doc_first_line = translate_text(doc[0])
+  doc_first_line = doc[0]
   doc.pop(0)
   
   # Подстановка знака № и очистка строки от ненужных символов
@@ -73,8 +126,16 @@ def get_law_name(doc):
   
   return law_name.strip()
 
-def get_law_data(doc):
-  text = translate_text('|'.join(doc))
+def get_law_data(path):
+  doc_title_arr = get_doc_title(path)
+  doc_title_arr = remove_empty_lines(doc_title_arr)
+  
+  # Переводим заголовок на английский
+  text = translate_text('|'.join(doc_title_arr))
+  if text == None:
+    print('Ошибка перевода')
+    return
+
   text = text.split('|')
   document_title = []
   
@@ -99,29 +160,19 @@ def processing_law_data(law_number, law_date, law_tipe, law_name):
   print('law_tipe:', law_tipe)
   print('law_name:', law_name)
 
+
 ########################
 # Редактирование файла #
 ########################
 
-def remove_empty_lines(lines):
-  """Удаляет пустые строки из списка строк"""
-  return list(filter(lambda x: x.strip(), lines))
+def remove_matching_strings(doc, phrases):
+  result_doc = []
+  
+  for string_list in doc:
+    list = [string for string in string_list if not any(phrase in string for phrase in phrases)]
+    result_doc.append(list)
 
-def remove_first_last_lines(lines, phrase, pages_count):
-  """Удаляет ненужные строки"""
-  for index, line in enumerate(lines):
-    if phrase in line: # Проверяем, содержит ли строка заданную фразу
-      line = line.split()[1:]
-      line = ' '.join(line)
-      line = re.sub('/' + str(pages_count), '||', line).strip()
-      line = line.split('||')[1:]
-      line = ' '.join(line)
-      lines[index] = line
-      
-    line = line.strip()  # Убираем лишние пробелы в начале и конце каждой строки
-    lines[index] = line
-
-  return lines[1:]
+  return result_doc
 
 def join_page_text(page, lines):
   """Обновляет текст страницы"""
@@ -130,38 +181,58 @@ def join_page_text(page, lines):
   
   return page_content
 
-def flags_decomposer(flags):
-    """Make font flags human readable."""
-    l = []
-    if flags & 2 ** 4:
-        l.append("bold")
-    return ", ".join(l)
-
 def extract_text_from_pdf(file_path):
+  # Открываем файл для чтения
   doc = fitz.open(file_path)
   result_doc = []
   
+  blocks_centered = []
+  
   for page in doc:
     doc_page = []
-    blocks = page.get_text("dict", flags=11)["blocks"]
+    blocks = page.get_text("dict", flags=11, sort=True)["blocks"]
+    
+    text_blocks = page.get_text_blocks()
+    page_center = page.rect.width/2
+    
+    #print(page_center)
+    
+    for b in text_blocks:
+      block_center = (b[0] + b[2]) / 2  # координата x центра блока
+      if block_center > (page_center - 50) and block_center < (page_center + 50):
+        blocks_centered.append(b[4])  # сохраняем текст блока в массив
     
     for b in blocks:  # iterate through the text blocks
       paragraph = []
+      #print(b)
       
       for l in b["lines"]:  # iterate through the text lines
+        #print(l)
+        
         for s in l["spans"]:  # iterate through the text spans
           if s["flags"] == 20:
             # Жирный шрифт оборачиваем в тег <b>
             paragraph.append('<b>'+ s["text"].strip() +'</b>')
           else:
             paragraph.append(s["text"].strip())
-            
+      
       paragraph = " ".join(paragraph)
       doc_page.append(paragraph)
-      
-    result_doc.append(doc_page)
     
+    result_doc.append(doc_page)
+  
+  print(blocks_centered)
+  
+  doc.close()
   return result_doc
+
+
+#######################
+# Создание нового PDF #
+#######################
+
+
+
 
 ###################
 # Главная функция #
@@ -169,46 +240,30 @@ def extract_text_from_pdf(file_path):
 
 def process_pdf_file(input_file_path, output_file_path):
   """Обрабатывает файл PDF"""
-  # Открываем файл для чтения и записи
-  pdf_file = open(input_file_path, 'rb')
-  pdf_reader = PyPDF2.PdfReader(pdf_file)
-  
   doc = extract_text_from_pdf(input_file_path)
   
-  # Обходим каждую страницу
-  for page in doc:
-    page = page[2:]
-    print(page)
+  # Обходим каждую страницу и удаляем первую и последнюю строки
+  for i in range(len(doc)):
+    doc[i].pop(0)
+    doc[i].pop()
+  doc[-1].pop()
   
-  # Обходим каждую страницу
-  for page_num in range(len(pdf_reader.pages)):
-    page = pdf_reader.pages[page_num]
-    lines = page.extract_text().split('\n')
-    
-    non_empty_lines = remove_empty_lines(lines)
-    cleared_page = remove_first_last_lines(non_empty_lines, 'https://', len(pdf_reader.pages))
-    non_empty_lines = remove_empty_lines(cleared_page)
-    
-    if page_num == 0:
-      document_title = non_empty_lines[:4]
-      
-      get_law_data(document_title)
-    
-    changed_page = join_page_text(page, non_empty_lines)
-    
-    
-    
-    # pdf_writer = PyPDF2.PdfWriter()
-    # pdf_writer.add_page(changed_page)
-    # output_file = open(output_file_path, 'wb')
-    # pdf_writer.write(output_file)
-    # output_file.close()
-    
-  pdf_file.close()
+  # Удаление слов-заглушек
+  phrases_to_remove = {"Image", "Table"}
+  doc = remove_matching_strings(doc, phrases_to_remove)
+  
+  #print(doc)
+  
+  # Извлечение данных о законе
+  get_law_data(input_file_path)
+  
 
 # Пути к файлам
 input_pdf = "Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf"
 output_pdf = 'Result PDF/Result.pdf'
+
+# Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for
+# Federal_Law_№_47_of_2022_in_the_matter_of_corporate_and_business
 
 # Используем функцию process_pdf_file для обработки файла PDF
 process_pdf_file(input_pdf, output_pdf)
