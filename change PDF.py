@@ -165,6 +165,13 @@ def processing_law_data(law_number, law_date, law_tipe, law_name):
 # Редактирование файла #
 ########################
 
+def flatten_list(lst):
+  flattened_list = []
+  for sublist in lst:
+    for item in sublist:
+      flattened_list.append(item)
+  return flattened_list
+
 def remove_matching_strings(doc, phrases):
   result_doc = []
   
@@ -186,50 +193,66 @@ def extract_text_from_pdf(file_path):
   doc = fitz.open(file_path)
   result_doc = []
   
-  blocks_centered = []
-  
   for page in doc:
     doc_page = []
-    blocks = page.get_text("dict", flags=11, sort=True)["blocks"]
-    
-    text_blocks = page.get_text_blocks()
-    page_center = page.rect.width/2
-    
-    #print(page_center)
-    
-    for b in text_blocks:
-      block_center = (b[0] + b[2]) / 2  # координата x центра блока
-      if block_center > (page_center - 50) and block_center < (page_center + 50):
-        blocks_centered.append(b[4])  # сохраняем текст блока в массив
-    
-    for b in blocks:  # iterate through the text blocks
+    blocks = page.get_text("dict", flags=11, sort=True)
+    page_width = blocks['width']
+
+    for b in blocks["blocks"]:  # iterate through the text blocks
       paragraph = []
-      #print(b)
+      x0 = b['bbox'][0]
+      x1 = b['bbox'][2]
+      is_title = True
       
       for l in b["lines"]:  # iterate through the text lines
         #print(l)
         
         for s in l["spans"]:  # iterate through the text spans
           if s["flags"] == 20:
-            # Жирный шрифт оборачиваем в тег <b>
-            paragraph.append('<b>'+ s["text"].strip() +'</b>')
+            # Жирный шрифт оборачиваем в тег <span>
+            paragraph.append('<span class="bold">'+ s["text"].strip() +'</span>')
           else:
             paragraph.append(s["text"].strip())
+            is_title = False
       
-      paragraph = " ".join(paragraph)
+      if is_title:
+        paragraph = remove_html_tags(paragraph)
+        paragraph = " ".join(paragraph)
+        paragraph = '<h4 class="law-title center">' + paragraph + '</h4>'
+      else:
+        paragraph = " ".join(paragraph)
+        paragraph = '<p class="law-text">' + paragraph + '</p>'
+      
+      if x1 < page_width / 2:
+        class_str = re.findall(r'class=\"(.*)\"', paragraph)
+        classes = class_str[0].split()
+        if 'law-title' in classes:
+          classes[classes.index('law-title')] = 'law-text'
+          classes.append('bold')
+        if 'center' in classes:
+          classes.remove('center')
+        classes.append('left')
+        
+        ######
+        # (!!!) Доделать изменение в paragraph
+        ######
+        print(classes)
+      
       doc_page.append(paragraph)
+      
+      if x1 < page_width / 2:
+        print('x0:', x0, '---', 'x1:', x1)
+        print(paragraph, '\n\n')
     
     result_doc.append(doc_page)
-  
-  print(blocks_centered)
   
   doc.close()
   return result_doc
 
 
-#######################
-# Создание нового PDF #
-#######################
+#################
+# Создание HTML #
+#################
 
 
 
@@ -238,7 +261,7 @@ def extract_text_from_pdf(file_path):
 # Главная функция #
 ###################
 
-def process_pdf_file(input_file_path, output_file_path):
+def process_pdf_file(input_file_path, output_pdf_path):
   """Обрабатывает файл PDF"""
   doc = extract_text_from_pdf(input_file_path)
   
@@ -253,6 +276,13 @@ def process_pdf_file(input_file_path, output_file_path):
   doc = remove_matching_strings(doc, phrases_to_remove)
   
   #print(doc)
+  
+  # Преобразование двухмерного списка в одномерный
+  doc = flatten_list(doc)
+  
+  #print(doc)
+  
+  # Запись в новый HTML
   
   # Извлечение данных о законе
   get_law_data(input_file_path)
