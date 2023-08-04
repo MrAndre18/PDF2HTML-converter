@@ -166,6 +166,7 @@ def processing_law_data(law_number, law_date, law_tipe, law_name):
 ########################
 
 def flatten_list(lst):
+  """Преобразует двухмерный массив в одномерный"""
   flattened_list = []
   for sublist in lst:
     for item in sublist:
@@ -188,6 +189,102 @@ def join_page_text(page, lines):
   
   return page_content
 
+def check_article(text, is_title):
+  """Проверяет, является ли параграф заголовком раздела"""
+  if is_title:
+    text = remove_html_tags(text)
+    text = " ".join(text)
+    text = '<h3 class="law-title center">' + text + '</h3>'
+  else:
+    text = " ".join(text)
+    text = '<p class="law-text">' + text + '</p>'
+  
+  return text
+
+def set_left_side_paragraph(paragraph):
+  """Задаёт классы параграфа, расположенного слева относительно страницы"""
+  class_str = re.findall(r'class=\"(.*)\"', paragraph)
+  classes = class_str[0].split()
+  if 'law-title' in classes:
+    classes[classes.index('law-title')] = 'law-text'
+    classes.append('bold')
+  if 'center' in classes:
+    classes.remove('center')
+  classes.append('left')
+  
+  pattern = r'class="(.+?)"'
+  paragraph = re.sub(pattern, r'class="{}"'.format(' '.join(classes)), paragraph)
+  paragraph = re.sub('h3', 'p', paragraph)
+  
+  return paragraph
+
+def wrap_doc_title(doc):
+  """Редактирует заголовок документа и оборачивает в нужный тег"""
+  law_title_number = 0
+  title_end_index = 0
+  paragraph_number = 0
+  law_title = []
+  
+  for paragraph in doc:
+    if 'h3' in paragraph:
+      law_title_number += 1
+    
+    if law_title_number == 2:
+      title_end_index = paragraph_number
+      break
+    
+    paragraph_number += 1
+  
+  law_title = doc[:(title_end_index + 1)] # получаем из документа заголовок
+  doc = doc[(title_end_index + 1):] # убираем из документа заголовок
+  
+  for i, item in enumerate(law_title):
+    law_title[i] = re.sub('<br>', ';', item)
+  
+  for i, item in enumerate(law_title):
+    if 'h3' in item:
+      item = remove_html_tags([item])
+      item = '<span class="bold">'+ item[0] +'</span>'
+      law_title[i] = item
+    else:
+      item = remove_html_tags([item])
+      law_title[i] = item[0]
+  
+  for i, item in enumerate(law_title):
+    law_title[i] = re.sub(';', '<br>', item)
+  
+  law_title = '<h2 class="law-title center main">' + '<br>'.join(law_title) + '</h2'
+  
+  return [law_title] + doc
+
+def join_articles(doc):
+  """Объединяет попарно идущие заголовки разделов"""
+  first_article_index = 0
+  last_article_index = 0
+  is_multiple_article = False
+  
+  tag_to_find = 'h3'
+  
+  for index, item in enumerate(doc):
+    if tag_to_find in item and tag_to_find not in doc[index - 1]:
+      first_article_index = index
+    
+    if tag_to_find in item and tag_to_find in doc[index - 1]:
+      last_article_index = index
+      is_multiple_article = True
+    
+    if tag_to_find not in item and tag_to_find in doc[index - 1] and is_multiple_article:
+      item = doc[first_article_index:(last_article_index + 1)]
+      for aricle_part in item:
+        doc.remove(aricle_part)
+      item = remove_html_tags(item)
+      item = '<h3 class="law-title center">' + '<br>'.join(item) + '</h3'
+      doc.insert(first_article_index, item)
+      
+      is_multiple_article = False
+  
+  return doc
+
 def extract_text_from_pdf(file_path):
   # Открываем файл для чтения
   doc = fitz.open(file_path)
@@ -197,16 +294,13 @@ def extract_text_from_pdf(file_path):
     doc_page = []
     blocks = page.get_text("dict", flags=11, sort=True)
     page_width = blocks['width']
-
+    
     for b in blocks["blocks"]:  # iterate through the text blocks
       paragraph = []
-      x0 = b['bbox'][0]
-      x1 = b['bbox'][2]
+      x1 = b['bbox'][2] # Позиция правого края параграфа
       is_title = True
       
       for l in b["lines"]:  # iterate through the text lines
-        #print(l)
-        
         for s in l["spans"]:  # iterate through the text spans
           if s["flags"] == 20:
             # Жирный шрифт оборачиваем в тег <span>
@@ -214,36 +308,19 @@ def extract_text_from_pdf(file_path):
           else:
             paragraph.append(s["text"].strip())
             is_title = False
+        paragraph.append('<br>')
       
-      if is_title:
-        paragraph = remove_html_tags(paragraph)
-        paragraph = " ".join(paragraph)
-        paragraph = '<h4 class="law-title center">' + paragraph + '</h4>'
-      else:
-        paragraph = " ".join(paragraph)
-        paragraph = '<p class="law-text">' + paragraph + '</p>'
+      # Удаляем последний <br>
+      paragraph.pop()
       
+      # Проверка, является ли параграф заголовком раздела
+      paragraph = check_article(paragraph, is_title)
+      
+      # Проверка, расположен ли параграф слева
       if x1 < page_width / 2:
-        class_str = re.findall(r'class=\"(.*)\"', paragraph)
-        classes = class_str[0].split()
-        if 'law-title' in classes:
-          classes[classes.index('law-title')] = 'law-text'
-          classes.append('bold')
-        if 'center' in classes:
-          classes.remove('center')
-        classes.append('left')
-        
-        ######
-        # (!!!) Доделать изменение в paragraph
-        ######
-        print(classes)
+        paragraph = set_left_side_paragraph(paragraph)
       
       doc_page.append(paragraph)
-      
-      if x1 < page_width / 2:
-        print('x0:', x0, '---', 'x1:', x1)
-        print(paragraph, '\n\n')
-    
     result_doc.append(doc_page)
   
   doc.close()
@@ -275,14 +352,22 @@ def process_pdf_file(input_file_path, output_pdf_path):
   phrases_to_remove = {"Image", "Table"}
   doc = remove_matching_strings(doc, phrases_to_remove)
   
-  #print(doc)
-  
   # Преобразование двухмерного списка в одномерный
   doc = flatten_list(doc)
   
-  #print(doc)
+  # Редактирование заголовка документа
+  doc = wrap_doc_title(doc)
+  
+  # Объединение заголовков разделов, идущих друг за другом
+  doc = join_articles(doc)
+  
+  print(doc)
   
   # Запись в новый HTML
+  #
+  #
+  #
+  ######
   
   # Извлечение данных о законе
   get_law_data(input_file_path)
