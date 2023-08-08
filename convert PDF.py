@@ -1,34 +1,28 @@
 import PyPDF2
-from bs4 import BeautifulSoup
 
-def pdf_to_html(pdf_path, html_path):
-    # Открыть PDF-файл
-    with open(pdf_path, 'rb') as pdf_file:
-        pdf_reader = PyPDF2.PdfReader(pdf_file)
-        # Получить количество страниц в файле
-        num_pages = len(pdf_reader.pages)
-        
-        # Перебрать все страницы и извлечь текст
-        pdf_text = ''
-        for page_num in range(num_pages):
-            pdf_page = pdf_reader.pages[page_num]
-            pdf_text += pdf_page.extract_text()
+def extract_text_from_pdf(file_path):
+  # Открываем файл для чтения
+  pdf_file = open(file_path, 'rb')
+  pdf_reader = PyPDF2.PdfReader(pdf_file)
+  
+  result_doc = []
+  
+  # Обходим первую страницу и достаёт заголовок
+  page = pdf_reader.pages[0]
+  lines = page.extract_text().split('\n')
+  
+  print(lines)
 
-        # Преобразовать текст в HTML
-        soup = BeautifulSoup('<html><head></head><body></body></html>', 'html.parser')
-        body = soup.find('body')
-        for line in pdf_text.split('\n'):
-            paragraph = soup.new_tag('p')
-            paragraph.string = line
-            body.append(paragraph)
-        
-        # Сохранить результат в HTML-файл
-        with open(html_path, mode='w', encoding='utf-8') as file:
-            file.write(str(soup))
-    
-    print(f'Файл "{pdf_path}" успешно преобразован в "{html_path}"')
+def process_pdf_file(input_file_path, output_html_directory):
+  """Обрабатывает файл PDF"""
+  doc = extract_text_from_pdf(input_file_path)
 
-pdf_path = "Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf"
-result_path = 'Result HTML/Result.html'
+# Пути к файлам
+input_pdf = "Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf"
+output_html_directory = 'Result HTML/'
 
-pdf_to_html(pdf_path, result_path)
+# Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for
+# Federal_Law_№_47_of_2022_in_the_matter_of_corporate_and_business
+
+# Используем функцию process_pdf_file для обработки файла PDF
+process_pdf_file(input_pdf, output_html_directory)

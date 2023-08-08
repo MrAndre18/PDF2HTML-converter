@@ -3,7 +3,7 @@ import re
 from datetime import datetime
 from langdetect import detect
 from translate import Translator
-import fitz
+import fitz # PyMuPDF
 
 
 ################################
@@ -47,6 +47,8 @@ def get_doc_title(path):
   # Обходим первую страницу и достаёт заголовок
   page = pdf_reader.pages[0]
   lines = page.extract_text().split('\n')
+  
+  #print(lines)
   
   cleared_page = remove_first_last_lines(lines, 'https://', len(pdf_reader.pages))
   
@@ -173,22 +175,6 @@ def flatten_list(lst):
       flattened_list.append(item)
   return flattened_list
 
-def remove_matching_strings(doc, phrases):
-  result_doc = []
-  
-  for string_list in doc:
-    list = [string for string in string_list if not any(phrase in string for phrase in phrases)]
-    result_doc.append(list)
-
-  return result_doc
-
-def join_page_text(page, lines):
-  """Обновляет текст страницы"""
-  page_content = ' \n'.join(lines)
-  #page.merge_page(page_content)
-  
-  return page_content
-
 def check_article(text, is_title):
   """Проверяет, является ли параграф заголовком раздела"""
   if is_title:
@@ -253,7 +239,7 @@ def wrap_doc_title(doc):
   for i, item in enumerate(law_title):
     law_title[i] = re.sub(';', '<br>', item)
   
-  law_title = '<h2 class="law-title center main">' + '<br>'.join(law_title) + '</h2'
+  law_title = '<h2 class="law-title center main">' + '<br>'.join(law_title) + '</h2>'
   
   return [law_title] + doc
 
@@ -278,12 +264,42 @@ def join_articles(doc):
       for aricle_part in item:
         doc.remove(aricle_part)
       item = remove_html_tags(item)
-      item = '<h3 class="law-title center">' + '<br>'.join(item) + '</h3'
+      item = '<h3 class="law-title center">' + '<br>'.join(item) + '</h3>'
       doc.insert(first_article_index, item)
       
       is_multiple_article = False
   
   return doc
+
+def reverse_text(text):
+  result_text = text[::-1]
+  
+  # Отображаем зеркально все числа
+  numbers = re.findall(r'\d+', result_text)
+  if len(numbers):
+    for number in numbers:
+      result_text = result_text.replace(number, number[::-1])
+  
+  # Отображаем зеркально все даты
+  dates = re.findall(r'\d{4}/\d{1,}/?\d{0,}', result_text)
+  if len(dates):
+    for date in dates:
+      reversed_date = date.split('/')
+      reversed_date = '/'.join(reversed_date[::-1])
+      result_text = result_text.replace(date, reversed_date)
+  
+  # Меняем местами скобки
+  swapped_string = ""
+  for char in result_text:
+    if char == "(":
+        swapped_string += ")"
+    elif char == ")":
+        swapped_string += "("
+    else:
+        swapped_string += char
+  result_text = swapped_string
+  
+  return result_text
 
 def extract_text_from_pdf(file_path):
   # Открываем файл для чтения
@@ -299,31 +315,47 @@ def extract_text_from_pdf(file_path):
       paragraph = []
       x1 = b['bbox'][2] # Позиция правого края параграфа
       is_title = True
+      to_extract = True
       
       for l in b["lines"]:  # iterate through the text lines
+        line = []
+        
         for s in l["spans"]:  # iterate through the text spans
+          # Проверка, содержит ли параграф ссылку
+          if 'https://' in s["text"] or "Image" in s["text"] or "Table"  in s["text"]:
+            to_extract = False
+          
+          text = reverse_text(s["text"])
+          
           if s["flags"] == 20:
             # Жирный шрифт оборачиваем в тег <span>
-            paragraph.append('<span class="bold">'+ s["text"].strip() +'</span>')
+            line.insert(0, '<span class="bold">'+ text.strip() +'</span>')
           else:
-            paragraph.append(s["text"].strip())
+            line.insert(0, text.strip())
             is_title = False
+        paragraph += line
         paragraph.append('<br>')
       
-      # Удаляем последний <br>
-      paragraph.pop()
+      if to_extract:
+        # Удаляем последний <br>
+        paragraph.pop()
+        
+        # Проверка, является ли параграф заголовком раздела
+        paragraph = check_article(paragraph, is_title)
+        
+        # Проверка, расположен ли параграф слева
+        if x1 < page_width / 2:
+          paragraph = set_left_side_paragraph(paragraph)
+        
+        doc_page.append(paragraph)
       
-      # Проверка, является ли параграф заголовком раздела
-      paragraph = check_article(paragraph, is_title)
-      
-      # Проверка, расположен ли параграф слева
-      if x1 < page_width / 2:
-        paragraph = set_left_side_paragraph(paragraph)
-      
-      doc_page.append(paragraph)
+      to_extract = True
+    
+    doc_page.pop(0)
     result_doc.append(doc_page)
   
   doc.close()
+  result_doc[-1].pop()
   return result_doc
 
 
@@ -331,26 +363,45 @@ def extract_text_from_pdf(file_path):
 # Создание HTML #
 #################
 
-
+def creacte_html(doc, output_html_path):
+  document_content = '\n'.join(doc)
+  html = f'''
+  <!DOCTYPE html>
+  <html lang="en">
+  <head>
+  <meta charset="UTF-16">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>*{{direction:rtl;}}</style>
+  </head>
+  <body>
+  {document_content}
+  </body>
+  </html>
+  '''
+  
+  with open(output_html_path, 'w', encoding='utf-16') as file:
+    file.write(html)
+  
+  print("HTML file created successfully.")
 
 
 ###################
 # Главная функция #
 ###################
 
-def process_pdf_file(input_file_path, output_pdf_path):
+def process_pdf_file(input_file_path, output_html_directory):
   """Обрабатывает файл PDF"""
   doc = extract_text_from_pdf(input_file_path)
+  file_name = input_file_path.split('/')[-1].split('.')[0]
+  output_html_path = output_html_directory + file_name + '.html'
+  
+  #print(doc)
   
   # Обходим каждую страницу и удаляем первую и последнюю строки
-  for i in range(len(doc)):
-    doc[i].pop(0)
-    doc[i].pop()
-  doc[-1].pop()
-  
-  # Удаление слов-заглушек
-  phrases_to_remove = {"Image", "Table"}
-  doc = remove_matching_strings(doc, phrases_to_remove)
+  # for i in range(len(doc)):
+  #   doc[i].pop(0)
+  #   doc[i].pop()
+  # doc[-1].pop()
   
   # Преобразование двухмерного списка в одномерный
   doc = flatten_list(doc)
@@ -361,24 +412,22 @@ def process_pdf_file(input_file_path, output_pdf_path):
   # Объединение заголовков разделов, идущих друг за другом
   doc = join_articles(doc)
   
-  print(doc)
-  
   # Запись в новый HTML
-  #
-  #
-  #
-  ######
+  creacte_html(doc, output_html_path)
   
   # Извлечение данных о законе
-  get_law_data(input_file_path)
-  
+  # get_law_data(input_file_path)
 
 # Пути к файлам
-input_pdf = "Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf"
-output_pdf = 'Result PDF/Result.pdf'
+input_pdf = "Abu Dhabi/Direction 1/Resolution_of_the_Supreme_Council_of_the_Federation_№_3_of_1996.pdf"
+output_html_directory = 'Result HTML/'
 
-# Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for
+# Federal Law № 2 of 1971 Concerning the Union Flag
+# Federal_Decree_Law_№_32_of_2021_regarding_trading_companies
+# Federal_Law_№_10_of_1972_Concerning_the_emblem_of_the_United_Arab
 # Federal_Law_№_47_of_2022_in_the_matter_of_corporate_and_business
+# Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for
+# Resolution_of_the_Supreme_Council_of_the_Federation_№_3_of_1996
 
 # Используем функцию process_pdf_file для обработки файла PDF
-process_pdf_file(input_pdf, output_pdf)
+process_pdf_file(input_pdf, output_html_directory)
