@@ -489,79 +489,14 @@ def create_html(doc, output_html_path):
         </p>
     -->
     '''
-    styles = '''
-    <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
-    * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-        direction:rtl;
-        font-family: 'Inter', sans-serif;
-    }
-    body {
-        background: #404040;
-        color: #EDF8FF;
-        width: 50%;
-        min-width: 600px;
-        margin: 0 auto;
-        padding: 80px 60px 60px;
-    }
-    .law-title {
-        font-weight: 700;
-        line-height: 1.75;
-        font-size: 16px;
-    }
-    .law-title:not(:first-child) {
-        margin: 38px 0 24px;
-    }
-    .main {
-        line-height: 2;
-        font-size: 24px;
-    }
-    .law-text {
-        font-weight: 300;
-        line-height: 1.5;
-        font-size: 16px;
-        margin-bottom: 8px;
-    }
-    .law-line {
-        width: 40%;
-        height: 1px;
-        background: #FFD700;
-        margin: 30px auto 50px;
-    }
-    .bold {
-        font-weight: 700;
-        display: inline-block;
-    }
-    .law-text.bold {
-        display: block;
-    }
-    .center {
-        text-align: center;
-    }
-    .right {
-        text-align: right;
-    }
-    .left {
-        text-align: left;
-    }
-    .italic {
-        font-weight: 200;
-        font-style: italic;
-    }
-    </style>
-    '''
     
     html = f'''
     {comments}
     <!DOCTYPE html>
     <html lang="en">
     <head>
-    <meta charset="UTF-16">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    {styles}
     </head>
     <body>
     {document_content}
@@ -569,7 +504,7 @@ def create_html(doc, output_html_path):
     </html>
     '''
 
-    with open(output_html_path, 'w', encoding='utf-16') as file:
+    with open(output_html_path, 'w', encoding='utf-8') as file:
         file.write(html)
         print("HTML file created successfully.")
 
