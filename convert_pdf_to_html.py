@@ -307,6 +307,12 @@ def reverse_text(text):
             reversed_date = date.split('/')
             reversed_date = '/'.join(reversed_date[::-1])
             result_text = result_text.replace(date, reversed_date)
+    
+    # Отображаем зеркально все слова на английском
+    english_words = re.findall(r'\b[a-zA-Z]+\b', result_text)
+    if len(english_words):
+        for word in english_words:
+            result_text = result_text.replace(word, word[::-1])
 
     # Меняем местами скобки
     swapped_string = ""
@@ -538,8 +544,11 @@ def process_pdf_file(input_file_path, output_html_directory):
 
 
 # Пути к файлам
-input_pdf = "Abu Dhabi/Direction 1/Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for.pdf"
+input_pdf = "Abu Dhabi/Direction 1/Federal_Decree_Law_№_32_of_2021_regarding_trading_companies.pdf"
 output_html_directory = 'Result HTML/'
+
+# Используем функцию process_pdf_file для обработки файла PDF
+process_pdf_file(input_pdf, output_html_directory)
 
 # Federal Law № 2 of 1971 Concerning the Union Flag
 # Federal_Decree_Law_№_32_of_2021_regarding_trading_companies
@@ -547,6 +556,3 @@ output_html_directory = 'Result HTML/'
 # Federal_Law_№_47_of_2022_in_the_matter_of_corporate_and_business
 # Ministerial_Resolution_№_71_of_1989_Regarding_the_procedures_for
 # Resolution_of_the_Supreme_Council_of_the_Federation_№_3_of_1996
-
-# Используем функцию process_pdf_file для обработки файла PDF
-process_pdf_file(input_pdf, output_html_directory)
