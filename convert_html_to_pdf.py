@@ -4,7 +4,6 @@ import pdfkit
 def convert_html_to_pdf(html_path, output_pdf_directory, css_path):
     file_name = html_path.split('/')[-1].split('.')[0]
     output_pdf_path = output_pdf_directory + file_name + '.pdf'
-    footer_html = 'footer.html'
 
     config = pdfkit.configuration(
         wkhtmltopdf='../../Program Files/wkhtmltopdf/bin/wkhtmltopdf.exe')
@@ -18,8 +17,7 @@ def convert_html_to_pdf(html_path, output_pdf_directory, css_path):
         'custom-header': [
             ('Accept-Encoding', 'gzip')
         ],
-        'no-outline': None,
-        'footer-html': footer_html
+        'no-outline': None
     }
 
     pdfkit.from_file(html_path, output_pdf_path, configuration=config, options=options, css=css_path)
